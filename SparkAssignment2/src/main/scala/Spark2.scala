@@ -36,7 +36,7 @@ object Spark2 extends App {
   val trainDF1 = trainDF.na.fill(roundedMeanAge, Seq("Age"))
   // trainDF1.show()
 
-  val trainDF2 = trainDF1.na.fill("s", Seq("Embarked"))
+  val trainDF2 = trainDF1.na.fill("S", Seq("Embarked"))
 
 
   val testDF = spark.read.option("header", true).option("inferSchema", true).csv("/Users/surajvisvesh/Documents/courses/csye7200-big-data/assignment/assignment-spark2/test.csv")
@@ -85,8 +85,7 @@ object Spark2 extends App {
     .alias("Average Ticket Fare")
   println("Average fare of a ticket for the port of embarkation:")
   averageFareEmbarked.show()
-  // This tells us that Q might be the last stop before crashing(closest stop to destination) because it has the least average fare price,
-  // while C might be the departure location, having the highest average ticket fare
+  // This tells us that Q might be the last stop before crashing(closest stop to destination) because it has the least average fare price, while C might be the departure location, having the highest average ticket fare
 
 
   // Finding the overall survival percentage
