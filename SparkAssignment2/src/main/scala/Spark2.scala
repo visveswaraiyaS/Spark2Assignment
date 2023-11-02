@@ -3,8 +3,8 @@ import org.apache.spark.sql.functions.{avg, _}
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.ml.feature.{IndexToString, StringIndexer, VectorAssembler}
 import org.apache.spark.ml.Pipeline
-import org.apache.spark.ml.classification.{LogisticRegression, RandomForestClassifier, GBTClassifier}
-import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
+import org.apache.spark.ml.classification.{GBTClassifier, LogisticRegression, RandomForestClassifier}
+import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
 import org.apache.spark.ml.tuning.{CrossValidator, ParamGridBuilder}
 import org.apache.spark.sql.types.StringType
 
@@ -125,7 +125,7 @@ object Spark2 extends App {
     new StringIndexer()
       .setInputCol(colName)
       .setOutputCol(colName + "Indexed")
-      .fit(allData)
+      .fit(trainDF4)
   }
 
 
@@ -133,7 +133,7 @@ object Spark2 extends App {
   val labelIndexer = new StringIndexer()
     .setInputCol("Survived")
     .setOutputCol("SurvivedIndexed")
-    .fit(allData)
+    .fit(trainDF4)
 
   //Assembling features into one vector
   val numericFeatures = Seq("Age", "SibSp", "Parch", "Fare")
@@ -145,7 +145,7 @@ object Spark2 extends App {
 
 //Randomforest classifier
   val randomforest = new RandomForestClassifier()
-    .setLabelCol("SurvivedIndexed")
+    .setLabelCol("Survived")
     .setFeaturesCol("Features")
 
   //Retrieving original labels
@@ -161,21 +161,23 @@ object Spark2 extends App {
   trainDF4.show()
   testDF5.show()
 
-  val evaluator = new BinaryClassificationEvaluator()
+  val evaluator = new MulticlassClassificationEvaluator()
     .setLabelCol("SurvivedIndexed")
+    .setPredictionCol("prediction")
 
   val model = pipeline.fit(trainDF4)
 
   //predictions on validation data
   val predictions = model.transform(testDF5)
   predictions.show(false)
+
   //Accuracy
   val accuracy = evaluator.evaluate(predictions)
-  println("Accuracy " + ( accuracy * 100))
+  println("Accuracy of Titanic Train and Test: " + accuracy * 100)
 
   val survivalGender2 = predictions.filter(col("Prediction") === 1).groupBy("Sex").count().withColumnRenamed("count", "SurvivedPassengers").
     join(predictions.groupBy("Sex").count().withColumnRenamed("count", "TotalPassengers"), Seq("Sex"))
-  val survivalRateGender2 = survivalGender2.withColumn("SurvivalRate", col("SurvivedPassengers") / col("TotalPassengers"))
+  val survivalRateGender2 = survivalGender2.withColumn("SurvivalRate", col("SurvivedPassengers") / col("TotalPassengers") * 100)
   survivalRateGender2.show()
 
   spark.stop()
