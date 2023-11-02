@@ -22,7 +22,7 @@ object Spark2 extends App {
 
   // Counting null values in each column
   val nullCounts = trainDF.select(trainDF.columns.map(c => sum(when(col(c).isNull, 1).otherwise(0)).alias(c)): _*)
-  nullCounts.show()
+  // nullCounts.show()
 
   // finding mean to replace the null values at age column
   val averageAge = trainDF.select("Age").agg(avg("Age")).collect() match {
@@ -30,11 +30,11 @@ object Spark2 extends App {
     case _ => 0
   }
   val roundedMeanAge:Double = BigDecimal(averageAge).setScale(1, BigDecimal.RoundingMode.HALF_UP).toDouble
-  println(roundedMeanAge)
+
 
   // new df with null values replaced with average age
   val trainDF1 = trainDF.na.fill(roundedMeanAge, Seq("Age"))
-  trainDF1.show()
+  // trainDF1.show()
 
   val trainDF2 = trainDF1.na.fill("s", Seq("Embarked"))
 
@@ -45,7 +45,6 @@ object Spark2 extends App {
     case _ => 0
   }
   val roundedMeanAgeTest: Double = BigDecimal(averageAgeTest).setScale(1, BigDecimal.RoundingMode.HALF_UP).toDouble
-  println(roundedMeanAgeTest)
 
   val averageFareTest = testDF.select("Age").agg(avg("Age")).collect() match {
     case Array(Row(avg: Double)) => avg
@@ -53,10 +52,10 @@ object Spark2 extends App {
   }
 
   val roundedMeanFareTest: Double = BigDecimal(averageFareTest).setScale(1, BigDecimal.RoundingMode.HALF_UP).toDouble
-  println(roundedMeanFareTest)
 
-  val testDF1 = testDF.na.fill(roundedMeanAge, Seq("Age")).na.fill(roundedMeanFareTest, Seq("Fare"))
-  val testDF2 = testDF1.na.fill("s", Seq("Embarked"))
+
+  val testDF1 = testDF.na.fill(roundedMeanAgeTest, Seq("Age")).na.fill(roundedMeanFareTest, Seq("Fare"))
+  val testDF2 = testDF1.na.fill("S", Seq("Embarked"))
   val testDF3 = testDF2.drop("Cabin", "Ticket")
 
 
@@ -68,6 +67,7 @@ object Spark2 extends App {
   // Finding mean and standard deviation.
   val meanMedianSD = trainDF2.select(mean("Fare").alias("mean fare"),stddev("Fare").alias("Standard Deviation of Fare"),
     mean("Age").alias("Mean Age"), stddev("Age").alias("Standard Deviation of Age"))
+  println("Mean, SD of Fare and Age is below:")
   meanMedianSD.show()
   // When normally distributed, about 68% of the population lie between the age
 
@@ -83,6 +83,7 @@ object Spark2 extends App {
     .groupBy("Embarked")
     .agg(avg("Fare"))
     .alias("Average Ticket Fare")
+  println("Average fare of a ticket for the port of embarkation:")
   averageFareEmbarked.show()
   // This tells us that Q might be the last stop before crashing(closest stop to destination) because it has the least average fare price,
   // while C might be the departure location, having the highest average ticket fare
@@ -96,6 +97,7 @@ object Spark2 extends App {
   val survivalGender = trainDF2.filter(col("Survived") === 1).groupBy("Sex").count().withColumnRenamed("count","SurvivedPassengers").
     join(trainDF2.groupBy("Sex").count().withColumnRenamed("count","TotalPassengers"), Seq("Sex"))
   val survivalRateGender = survivalGender.withColumn("SurvivalRate", col("SurvivedPassengers") / col("TotalPassengers"))
+  println("Survival Rate of the passengers based on sex:")
   survivalRateGender.show()
   // This shows us that women were evacuated first during the crisis
 
@@ -104,21 +106,21 @@ object Spark2 extends App {
   println("Survival rate of Children: "+survivalChildren + "%")
 
 
+
   // FEATURE ENGINEERING
 
-
+  // Extracting title from names for Train dataset
   val trainDF3 = trainDF2.withColumn("Title", regexp_extract(col("Name"), "(Mr\\.|Mrs\\.|Miss\\.|Master\\.|Col\\.)", 0))
+  // Dropping unused columns 'Cabin' and 'Ticket'
   val trainDF4 = trainDF3.drop("Cabin", "Ticket")
 
-//  val testDF3ColNames = Seq("PassengerId", "Pclass", "Name", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked")
+
+
   val testDF4 = testDF3.withColumn("Survived", lit("0")).select("PassengerId", "Survived", "Pclass", "Name", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked")
+  // Extracting title from names for Test dataset
   val testDF5 = testDF4.withColumn("Title", regexp_extract(col("Name"), "(Mr\\.|Mrs\\.|Miss\\.|Master\\.|Col\\.)", 0))
-  testDF5.show()
 
 
-
-  val allData = trainDF4.union(testDF5)
-  allData.cache()
 
   val categoryFeatures = Seq("Pclass", "Sex", "Embarked", "Title")
   val stringIndexers = categoryFeatures.map { colName =>
@@ -127,7 +129,6 @@ object Spark2 extends App {
       .setOutputCol(colName + "Indexed")
       .fit(trainDF4)
   }
-
 
   //Indexing target feature
   val labelIndexer = new StringIndexer()
@@ -143,7 +144,7 @@ object Spark2 extends App {
     .setInputCols(Array(IndexedFeatures: _*))
     .setOutputCol("Features")
 
-//Randomforest classifier
+  //Randomforest classifier
   val randomforest = new RandomForestClassifier()
     .setLabelCol("Survived")
     .setFeaturesCol("Features")
@@ -151,15 +152,12 @@ object Spark2 extends App {
   //Retrieving original labels
   val labelConverter = new IndexToString()
     .setInputCol("prediction")
-    .setOutputCol("predictedLabel")
+    .setOutputCol("predictionLabel")
     .setLabels(labelIndexer.labels)
 
   //Creating pipeline
   val pipeline = new Pipeline().setStages(
     (stringIndexers :+ labelIndexer :+ assembler :+ randomforest :+ labelConverter).toArray)
-
-  trainDF4.show()
-  testDF5.show()
 
   val evaluator = new MulticlassClassificationEvaluator()
     .setLabelCol("SurvivedIndexed")
@@ -173,12 +171,15 @@ object Spark2 extends App {
 
   //Accuracy
   val accuracy = evaluator.evaluate(predictions)
-  println("Accuracy of Titanic Train and Test: " + accuracy * 100)
+  println("Accuracy of Titanic Survival Prediction model: " + accuracy * 100)
 
+
+  // EDA - Checking the predicted survival rate and survival gender rate
   val survivalGender2 = predictions.filter(col("Prediction") === 1).groupBy("Sex").count().withColumnRenamed("count", "SurvivedPassengers").
     join(predictions.groupBy("Sex").count().withColumnRenamed("count", "TotalPassengers"), Seq("Sex"))
   val survivalRateGender2 = survivalGender2.withColumn("SurvivalRate", col("SurvivedPassengers") / col("TotalPassengers") * 100)
-  survivalRateGender2.show()
+  // survivalRateGender2.show()
 
+  // spark session stop
   spark.stop()
 }
